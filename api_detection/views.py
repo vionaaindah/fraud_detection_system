@@ -5,6 +5,7 @@ import fraud_detection_system.settings as sett
 from api_detection.models import digi_login_activity
 # from django.db.models import QuerySet
 from django.http import JsonResponse
+import json
 
 class FraudDetection(APIView):
     def get(self, request):
@@ -24,7 +25,8 @@ class FraudDetection(APIView):
             if (result==1):
                 data.at[i,'keterangan'] = 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'
 
-        response = data.to_json(orient='records')
+        data_result = data.to_json(orient='records')
+        response = json.loads(data_result)
         return JsonResponse(response, safe=False)
 
 
