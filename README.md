@@ -66,14 +66,12 @@ sudo vim fraud_detection_system/settings.py
 
 <b>Note : </b> To **`editing file`**  type **`i`** and to **`save file`** click Esc and type **`:wq`**
 
+```
 # [START ip_setup]
-```
 ALLOWED_HOSTS = ['YOUR_IP_ADRESS']
-```
 # [END ip_setup]
 
 # [START db_setup]
-```
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql_psycopg2',
@@ -84,8 +82,8 @@ DATABASES = {
         'PORT': '5432',
     }
 }
-```
 # [END db_setup]
+```
 
 Save **`settings.py`**
 
