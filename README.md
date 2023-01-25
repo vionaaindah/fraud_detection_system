@@ -3,8 +3,11 @@
 You can apply this application to Linux Server
 
 ## 📌Set up Database
-
-
+```bass
+sudo su <user_db>
+psql
+CREATE DATABASE <nama_db>
+```
 
 ## 📌Set up the Application on Server
 
@@ -48,6 +51,8 @@ pip install django
 **7. install dependencie and tensorflow**
 
 ```bass
+sudo apt install python3-dev libpq-dev
+pip3 install psycopg2
 pip install -r requirements.txt
 ```
 
@@ -59,7 +64,7 @@ pip install -r requirements.txt
 sudo vim fraud_detection_system/settings.py
 ```
 
-<b>Note : </b> To **`editing file`**  type **`i`** and to **`save file`** type **`:wq`**
+<b>Note : </b> To **`editing file`**  type **`i`** and to **`save file`** click Esc and type **`:wq`**
 
 
 # [START db_setup]
@@ -87,8 +92,14 @@ python manage.py makemigrations api_detection
 python manage.py migrate
 ```
 
+**10. Copy Databases**
+```bash
+sudo su <user_db>
+psql <nama_db>
+COPY api_detection_digi_login_activity FROM '/home/fraud_detection_system/test_db.csv' DELIMITER '|' CSV HEADER;
+```
 
-**10. Create a screen and run the application**
+**11. Create a screen and run the application**
 
 - use screen so the application can always run in the background
 
