@@ -66,6 +66,9 @@ sudo vim fraud_detection_system/settings.py
 
 <b>Note : </b> To **`editing file`**  type **`i`** and to **`save file`** click Esc and type **`:wq`**
 
+# [START ip_setup]
+ALLOWED_HOSTS = ['YOUR_IP_ADRESS']
+# [END ip_setup]
 
 # [START db_setup]
 DATABASES = {
@@ -74,7 +77,7 @@ DATABASES = {
         'NAME': '<nama_db>',
         'USER': '<user_db>',
         'PASSWORD': '<password_db>',
-        'HOST': '<your_host>',
+        'HOST': '127.0.0.1',
         'PORT': '5432',
     }
 }
