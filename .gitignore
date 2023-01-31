@@ -1,3 +1,6 @@
 /api_detection/__pycache__
 /api_detection/migrations
 /fraud_detection_system/__pycache__
+rfc_scale_oversampling_2fraud_10jt.pkl
+scaler_2fraud_10jt.pkl
+fraud_detection_system/settings.py
