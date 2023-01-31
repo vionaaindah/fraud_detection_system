@@ -10,9 +10,9 @@ class FraudDetection(APIView):
     def get(self, request):
         model = sett.model
         scaler = sett.scale
+
         database = digi_login_activity.objects.all().values()
         data = pd.DataFrame.from_records(database)
-
         data = data.assign(result=0, keterangan='')
 
         for i, row in data.iterrows():
@@ -23,7 +23,9 @@ class FraudDetection(APIView):
             data_pred['device_type'] = data_pred['device_type'].apply(lambda x: sum(ord(c) for c in x))
             data_pred['device_os'] = data_pred['device_os'].apply(lambda x: sum(ord(c) for c in x))
             data_pred_scaled = scaler.transform(data_pred)
+
             result = model.predict(data_pred_scaled)
+
             if(result == 2):
                 result = 0
             elif(result == 3):
@@ -40,9 +42,9 @@ class fraudDetection(APIView):
     def get(self, request):
         model = sett.model
         scaler = sett.scale
+
         database = digi_login_activity.objects.all().values()
         data = pd.DataFrame.from_records(database)
-
         data = data.assign(result=0, keterangan='')
 
         for i, row in data.iterrows():
@@ -53,7 +55,9 @@ class fraudDetection(APIView):
             data_pred['device_type'] = data_pred['device_type'].apply(lambda x: sum(ord(c) for c in x))
             data_pred['device_os'] = data_pred['device_os'].apply(lambda x: sum(ord(c) for c in x))
             data_pred_scaled = scaler.transform(data_pred)
+
             result = model.predict(data_pred_scaled)
+
             data.at[i,'result'] = result
             if (result==1):
                 data.at[i,'keterangan'] = 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'
