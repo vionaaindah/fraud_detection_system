@@ -129,5 +129,5 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 import pickle
-model = pickle.load(open("rfc_scale_oversampling_2fraud_10jt.pkl", "rb"))
-scale = pickle.load(open("scaler_2fraud_10jt.pkl", "rb"))
+model = pickle.load(open("model.pkl", "rb"))
+scale = pickle.load(open("scaler.pkl", "rb"))
