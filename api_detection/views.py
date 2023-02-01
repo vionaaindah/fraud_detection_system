@@ -13,7 +13,7 @@ class FraudDetection(APIView):
 
         database = digi_login_activity.objects.all().values()
         data = pd.DataFrame.from_records(database)
-        data = data.assign(result=0, keterangan='')
+        data = data.assign(result=0, keterangan={})
 
         for i, row in data.iterrows():
             data_pred = [[int(row.customer_id), row.activity_date,  row.device_name,  row.device_type,  row.device_os, float(row.latitude), float(row.longitude)]]
@@ -32,7 +32,7 @@ class FraudDetection(APIView):
                 result = 1
             data.at[i,'result'] = result
             if (result==1):
-                data.at[i,'keterangan'] = 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'
+                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
             
         data_result = data.to_json(orient='records')
         response = json.loads(data_result)
@@ -45,7 +45,7 @@ class fraudDetection(APIView):
 
         database = digi_login_activity.objects.all().values()
         data = pd.DataFrame.from_records(database)
-        data = data.assign(result=0, keterangan='')
+        data = data.assign(result=0, keterangan={})
 
         for i, row in data.iterrows():
             data_pred = [[int(row.customer_id), row.activity_date,  row.device_name,  row.device_type,  row.device_os, float(row.latitude), float(row.longitude)]]
@@ -60,12 +60,12 @@ class fraudDetection(APIView):
 
             data.at[i,'result'] = result
             if (result==1):
-                data.at[i,'keterangan'] = 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'
+                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
             elif(result==2):
-                data.at[i,'keterangan'] = 'Aktivitas login dilakukan pada device yang berbeda'
+                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan pada device yang berbeda'})
             elif(result==3):
-                data.at[i,'keterangan'] = 'Aktivitas login dilakukan menggunakan device yang berbeda dan di lokasi yang jauh berbeda dari aktivitas login lain'
-
+                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan pada device yang berbeda', 2: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
+       
         data_result = data.to_json(orient='records')
         response = json.loads(data_result)
         return JsonResponse(response, safe=False)
@@ -92,10 +92,10 @@ class fraudDetectionUI(APIView):
             data.at[i,'result'] = result
 
             if (result==1):
-                data.at[i,'keterangan'] = 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'
+                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
             elif(result==2):
-                data.at[i,'keterangan'] = 'Aktivitas login dilakukan pada device yang berbeda'
+                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan pada device yang berbeda'})
             elif(result==3):
-                data.at[i,'keterangan'] = 'Aktivitas login dilakukan menggunakan device yang berbeda dan di lokasi yang jauh berbeda dari aktivitas login lain'
-
+                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan pada device yang berbeda', 2: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
+       
         return render(request,'index.html', {'data': data.to_html(), 'num_columns': range(data.shape[1])})
