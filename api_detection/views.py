@@ -7,10 +7,11 @@ import json
 from datetime import datetime
 from django.db import connections
 import ast
+from django.utils import timezone
 
 class fraudDetection(APIView):
     def get(self, request):
-        database = digi_login.objects.all().values()
+        database = digi_login.objects.all().order_by('-activity_date').values()
         database = pd.DataFrame.from_records(database)
         database['keterangan'] = database['keterangan'].replace('nan', pd.np.nan)
         database['keterangan'] = database['keterangan'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
@@ -31,7 +32,7 @@ class fraudDetection(APIView):
         customer_id = int(data_request['customer_id'])
         app_id = data_request['app_id']
         app_version = data_request['app_version']
-        activity_date = datetime.now()
+        activity_date = timezone.now()
         activity_date = activity_date.strftime("%Y-%m-%d %H:%M:%S.%f")
         device_name = data_request['device_name']
         device_type = data_request['device_type']
@@ -82,17 +83,11 @@ class fraudDetection(APIView):
             obj.save()
         conn.commit()
 
-        database = digi_login.objects.all().values()
+        database = digi_login.objects.all().order_by('-activity_date').values()
         database = pd.DataFrame.from_records(database)
         database['keterangan'] = database['keterangan'].replace('nan', pd.np.nan)
         database['keterangan'] = database['keterangan'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
         database['fraud'] = database['fraud'].astype(int)
-
-        # database['keterangan'] = database['keterangan'].apply(lambda x: [x] if x == x else [])
-        # if(database['keterangan'] == 'nan'):
-        #     database['keterangan'] = {}
-        # else:
-        #     database['keterangan'] = database['keterangan'].apply(ast.literal_eval)
 
         data_result = database.to_json(orient='records')
         response = json.loads(data_result)
