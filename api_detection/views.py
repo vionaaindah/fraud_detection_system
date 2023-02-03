@@ -1,78 +1,30 @@
 import pandas as pd
 from rest_framework.views import APIView
 import fraud_detection_system.settings as sett
-from api_detection.models import digi_login_activity
+from api_detection.models import digi_login
 from django.http import JsonResponse
 import json
-from django.shortcuts import render
 from datetime import datetime
-
-class FraudDetection(APIView):
-    def get(self, request):
-        model = sett.model
-        scaler = sett.scale
-
-        database = digi_login_activity.objects.all().values()
-        data = pd.DataFrame.from_records(database)
-        data = data.assign(result=0, keterangan={})
-
-        for i, row in data.iterrows():
-            data_pred = [[int(row.customer_id), row.activity_date,  row.device_name,  row.device_type,  row.device_os, float(row.latitude), float(row.longitude)]]
-            data_pred = pd.DataFrame(data_pred, columns =['customer_id', 'activity_date', 'device_name', 'device_type', 'device_os', 'latitude', 'longitude'])
-            data_pred['activity_date'] = pd.to_datetime(data_pred['activity_date'], format='%Y-%m-%d %H:%M:%S.%f').apply(lambda x: x.timestamp())
-            data_pred['device_name'] = data_pred['device_name'].apply(lambda x: sum(ord(c) for c in x))
-            data_pred['device_type'] = data_pred['device_type'].apply(lambda x: sum(ord(c) for c in x))
-            data_pred['device_os'] = data_pred['device_os'].apply(lambda x: sum(ord(c) for c in x))
-            data_pred_scaled = scaler.transform(data_pred)
-
-            result = model.predict(data_pred_scaled)
-
-            if(result == 2):
-                result = 0
-            elif(result == 3):
-                result = 1
-            data.at[i,'result'] = result
-            if (result==1):
-                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
-            
-        data_result = data.to_json(orient='records')
-        response = json.loads(data_result)
-        return JsonResponse(response, safe=False)
+from django.db import connections
+import ast
 
 class fraudDetection(APIView):
     def get(self, request):
-        model = sett.model
-        scaler = sett.scale
+        database = digi_login.objects.all().values()
+        database = pd.DataFrame.from_records(database)
+        database['keterangan'] = database['keterangan'].replace('nan', pd.np.nan)
+        database['keterangan'] = database['keterangan'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+        database['fraud'] = database['fraud'].astype(int)
 
-        database = digi_login_activity.objects.all().values()
-        data = pd.DataFrame.from_records(database)
-        data = data.assign(result=0, keterangan={})
-
-        for i, row in data.iterrows():
-            data_pred = [[int(row.customer_id), row.activity_date,  row.device_name,  row.device_type,  row.device_os, float(row.latitude), float(row.longitude)]]
-            data_pred = pd.DataFrame(data_pred, columns =['customer_id', 'activity_date', 'device_name', 'device_type', 'device_os', 'latitude', 'longitude'])
-            data_pred['activity_date'] = pd.to_datetime(data_pred['activity_date'], format='%Y-%m-%d %H:%M:%S.%f').apply(lambda x: x.timestamp())
-            data_pred['device_name'] = data_pred['device_name'].apply(lambda x: sum(ord(c) for c in x))
-            data_pred['device_type'] = data_pred['device_type'].apply(lambda x: sum(ord(c) for c in x))
-            data_pred['device_os'] = data_pred['device_os'].apply(lambda x: sum(ord(c) for c in x))
-            data_pred_scaled = scaler.transform(data_pred)
-
-            result = model.predict(data_pred_scaled)
-
-            data.at[i,'result'] = result
-            if (result==1):
-                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
-            elif(result==2):
-                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan pada device yang berbeda'})
-            elif(result==3):
-                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan pada device yang berbeda', 2: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
-       
-        data_result = data.to_json(orient='records')
+        data_result = database.to_json(orient='records')
         response = json.loads(data_result)
         return JsonResponse(response, safe=False)
     
     def post(self, request):
+        conn = connections['default']
+
         data_request = request.data
+        
         model = sett.model
         scaler = sett.scale
 
@@ -90,40 +42,7 @@ class fraudDetection(APIView):
 
         data = [[customer_id, app_id, app_version, activity_date,  device_name,  device_type,  device_os, latitude, longitude, location_desc]]
         data = pd.DataFrame(data, columns =['customer_id', 'app_id', 'app_version', 'activity_date', 'device_name', 'device_type', 'device_os', 'latitude', 'longitude', 'location_desc'])
-        data = data.assign(result=0, keterangan={})
-
-        for i, row in data.iterrows():
-            data_pred = [[customer_id, activity_date,  device_name,  device_type,  device_os, latitude, longitude]]
-            data_pred = pd.DataFrame(data_pred, columns =['customer_id', 'activity_date', 'device_name', 'device_type', 'device_os', 'latitude', 'longitude'])
-            data_pred['activity_date'] = pd.to_datetime(data_pred['activity_date'], format='%Y-%m-%d %H:%M:%S.%f').apply(lambda x: x.timestamp())
-            data_pred['device_name'] = data_pred['device_name'].apply(lambda x: sum(ord(c) for c in x))
-            data_pred['device_type'] = data_pred['device_type'].apply(lambda x: sum(ord(c) for c in x))
-            data_pred['device_os'] = data_pred['device_os'].apply(lambda x: sum(ord(c) for c in x))
-            data_pred_scaled = scaler.transform(data_pred)
-
-            result = model.predict(data_pred_scaled)
-
-            data.at[i,'result'] = result
-            if (result==1):
-                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
-            elif(result==2):
-                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan pada device yang berbeda'})
-            elif(result==3):
-                data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan pada device yang berbeda', 2: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
-       
-        data_result = data.to_json(orient='records')
-        response = json.loads(data_result)
-        return JsonResponse(response, safe=False)
-
-class fraudDetectionUI(APIView):
-    def get(self, request):
-        model = sett.model
-        scaler = sett.scale
-        database = digi_login_activity.objects.all().values()
-        data = pd.DataFrame.from_records(database)
-        data = data.drop(columns='id')
-
-        data = data.assign(result=0, keterangan='')
+        data = data.assign(fraud=0, keterangan={})
 
         for i, row in data.iterrows():
             data_pred = [[int(row.customer_id), row.activity_date,  row.device_name,  row.device_type,  row.device_os, float(row.latitude), float(row.longitude)]]
@@ -133,8 +52,10 @@ class fraudDetectionUI(APIView):
             data_pred['device_type'] = data_pred['device_type'].apply(lambda x: sum(ord(c) for c in x))
             data_pred['device_os'] = data_pred['device_os'].apply(lambda x: sum(ord(c) for c in x))
             data_pred_scaled = scaler.transform(data_pred)
+
             result = model.predict(data_pred_scaled)
-            data.at[i,'result'] = result
+
+            data.at[i,'fraud'] = result
 
             if (result==1):
                 data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
@@ -142,5 +63,37 @@ class fraudDetectionUI(APIView):
                 data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan pada device yang berbeda'})
             elif(result==3):
                 data['keterangan'].at[i] = pd.Series({1: 'Aktivitas login dilakukan pada device yang berbeda', 2: 'Aktivitas login dilakukan di lokasi yang jauh berbeda dari aktivitas login lain'})
-       
-        return render(request,'index.html', {'data': data.to_html(), 'num_columns': range(data.shape[1])})
+
+        for i, row in data.iterrows():
+            obj = digi_login(
+                customer_id=row['customer_id'],
+                app_id=row['app_id'],
+                app_version=row['app_version'],
+                activity_date=row['activity_date'],
+                device_name=row['device_name'],
+                device_type=row['device_type'],
+                device_os=row['device_os'],
+                latitude=row['latitude'],
+                longitude=row['longitude'],
+                location_desc=row['location_desc'],
+                fraud=row['fraud'],
+                keterangan=row['keterangan']              
+                )
+            obj.save()
+        conn.commit()
+
+        database = digi_login.objects.all().values()
+        database = pd.DataFrame.from_records(database)
+        database['keterangan'] = database['keterangan'].replace('nan', pd.np.nan)
+        database['keterangan'] = database['keterangan'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+        database['fraud'] = database['fraud'].astype(int)
+
+        # database['keterangan'] = database['keterangan'].apply(lambda x: [x] if x == x else [])
+        # if(database['keterangan'] == 'nan'):
+        #     database['keterangan'] = {}
+        # else:
+        #     database['keterangan'] = database['keterangan'].apply(ast.literal_eval)
+
+        data_result = database.to_json(orient='records')
+        response = json.loads(data_result)
+        return JsonResponse(response, safe=False)

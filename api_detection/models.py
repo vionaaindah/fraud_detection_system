@@ -1,8 +1,7 @@
 from django.db import models
 
 # Create your models here.
-
-class digi_login_activity(models.Model):
+class digi_login(models.Model):
     customer_id = models.CharField(max_length=37)
     activity_date = models.DateTimeField(blank=True, null=True)
     app_id = models.CharField(max_length=64, blank=True, null=True)
@@ -13,3 +12,5 @@ class digi_login_activity(models.Model):
     latitude = models.CharField(max_length=20, blank=True, null=True)
     longitude = models.CharField(max_length=20, blank=True, null=True)
     location_desc = models.TextField(blank=True, null=True)
+    fraud = models.CharField(max_length=20, blank=True, null=True)
+    keterangan = models.TextField(blank=True, null=True)
