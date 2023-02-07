@@ -52,7 +52,8 @@ pip install django
 
 ```bass
 sudo apt install python3-dev libpq-dev
-pip3 install psycopg2
+pip install psycopg2
+pip install pymongo
 pip install -r requirements.txt
 ```
 
@@ -80,6 +81,9 @@ DATABASES = {
         'PASSWORD': '<password_db>',
         'HOST': '127.0.0.1',
         'PORT': '5432',
+        'OPTIONS': {
+            'options': '-c search_path=<your_schema_name>'
+        }
     }
 }
 # [END db_setup]
