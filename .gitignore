@@ -1,5 +1,7 @@
 /api_detection/__pycache__
 /api_detection/migrations
 /fraud_detection_system/__pycache__
-model.pkl
-scaler.pkl
+login_model.pkl
+login_scaler.pkl
+trx_scaler.pkl
+trx_model.pkl

@@ -12,5 +12,3 @@ class digi_login(models.Model):
     latitude = models.CharField(max_length=20, blank=True, null=True)
     longitude = models.CharField(max_length=20, blank=True, null=True)
     location_desc = models.TextField(blank=True, null=True)
-    fraud = models.CharField(max_length=20, blank=True, null=True)
-    keterangan = models.TextField(blank=True, null=True)
