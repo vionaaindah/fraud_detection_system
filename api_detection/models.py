@@ -9,6 +9,6 @@ class digi_login(models.Model):
     device_name = models.CharField(max_length=32, blank=True, null=True)
     device_type = models.CharField(max_length=32, blank=True, null=True)
     device_os = models.CharField(max_length=32, blank=True, null=True)
-    latitude = models.CharField(max_length=20, blank=True, null=True)
-    longitude = models.CharField(max_length=20, blank=True, null=True)
+    latitude = models.CharField(max_length=25, blank=True, null=True)
+    longitude = models.CharField(max_length=25, blank=True, null=True)
     location_desc = models.TextField(blank=True, null=True)
