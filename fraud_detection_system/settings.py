@@ -38,7 +38,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'api_detection'
+    'api_detection',
+    'pymongo'
 ]
 
 MIDDLEWARE = [
@@ -129,5 +130,7 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 import pickle
-model = pickle.load(open("model.pkl", "rb"))
-scale = pickle.load(open("scaler.pkl", "rb"))
+login_model = pickle.load(open("login_model.pkl", "rb"))
+login_scaler= pickle.load(open("login_scaler.pkl", "rb"))
+trx_model = pickle.load(open("trx_model.pkl", "rb"))
+trx_scaler= pickle.load(open("trx_scaler.pkl", "rb"))
