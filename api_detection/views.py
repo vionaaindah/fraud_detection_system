@@ -1,25 +1,54 @@
-import pandas as pd
-from rest_framework.views import APIView
-import fraud_detection_system.settings as sett
-from api_detection.models import digi_login
-from django.http import JsonResponse
-import json
+import os
 import ast
-from django.db import connections
-from pymongo import MongoClient
-from django.utils import timezone
-from datetime import datetime
+import json
+import operator
+import pickle
+import psycopg2
+import pandas as pd
+import fraud_detection_system.settings as sett
+
 from bson import Decimal128
 from decimal import Decimal
+from datetime import datetime
+from pymongo import MongoClient
+
+from rest_framework.views import APIView
+# from api_detection.models import transaksi, test_data, digi_login
+from django.http import JsonResponse
+from django.db import connections
+from django.utils import timezone
+
+from imblearn.over_sampling import SMOTE
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
 
 client = MongoClient('mongodb://<ip-address>:27017/')
 db = client['<nama-database>']
 digi_login = db['<nama-collection>']
 main_trx = db['<nama-collection>']
 
+# Koneksi ke database
+conn_public = psycopg2.connect(
+    host="<ip-address>",
+    database="<nama-database>",
+    user="<nama_user>",
+    password="<password>",
+    options="-c search_path=<nama_skema>"
+)
+
+# Koneksi ke database
+conn_collection = psycopg2.connect(
+    host="<ip-address>",
+    database="<nama-database>",
+    user="<nama_user>",
+    password="<password>",
+    options="-c search_path=<nama_skema>"
+)
+
 def loginFraudDetection(data):
-    model = sett.model
-    scaler = sett.scale
+    model = sett.login_model
+    scaler = sett.login_scaler
 
     for i, row in data.iterrows():
         data_pred = [[int(row.customer_id), row.activity_date,  row.device_name,  row.device_type,  row.device_os, float(row.latitude), float(row.longitude)]]
@@ -63,12 +92,24 @@ class digiloginFraud(APIView):
             start_date = datetime.strptime(start_date, '%Y-%m-%d')
             end_date = datetime.strptime(end_date, '%Y-%m-%d')
             if status is not None:
-                status = int(status)
+                status_txt = str(status)
+                if status_txt == 'SUSPECT':
+                    status = 1
+                elif status_txt == 'FRAUD':
+                    status = 2
+                else:
+                    status = 0
                 data_mongo = list(digi_login.find({"activity_date": {"$gte": start_date, "$lte": end_date}, "_isFraud": status}).sort("_id", -1).limit(10))
             else:
                 data_mongo = list(digi_login.find({"activity_date": {"$gte": start_date, "$lte": end_date}}).sort("_id", -1).limit(10))
         elif status is not None:
-            status = int(status)
+            status_txt = str(status)
+            if status_txt == 'SUSPECT':
+                status = 1
+            elif status_txt == 'FRAUD':
+                status = 2
+            else:
+                status = 0
             data_mongo = list(digi_login.find({"_isFraud": status}).sort("_id", -1).limit(10))
         else:
             data_mongo = list(digi_login.find().sort("_id", -1).limit(10000))
@@ -121,7 +162,7 @@ class digiloginFraud(APIView):
 
 def trxFraudDetection(data):
     model = sett.trx_model
-    scaler = sett.trx_scale
+    scaler = sett.trx_scaler
 
     for i, row in data.iterrows():
         narrative = 0
@@ -165,7 +206,13 @@ class mainTRXFraud(APIView):
             start_date = datetime.strptime(start_date, '%Y-%m-%d')
             end_date = datetime.strptime(end_date, '%Y-%m-%d')
             if status is not None:
-                status = int(status)
+                status_txt = str(status)
+                if status_txt == 'SUSPECT':
+                    status = 1
+                elif status_txt == 'FRAUD':
+                    status = 2
+                else:
+                    status = 0
                 if channel is not None:
                     channel = str(channel)
                     data_mongo = list(main_trx.find({"$and": [{"BUSS_DATE": {"$gte": start_date, "$lte": end_date}}, {"_isFraud": status}, {"USER_REF": {"$regex": "^" + channel}}]}).sort("_id", -1).limit(10))
@@ -178,7 +225,13 @@ class mainTRXFraud(APIView):
                 data_mongo = list(main_trx.find({"BUSS_DATE": {"$gte": start_date, "$lte": end_date}}).sort("_id", -1).limit(10))
 
         elif status is not None:
-            status = int(status)
+            status_txt = str(status)
+            if status_txt == 'SUSPECT':
+                status = 1
+            elif status_txt == 'FRAUD':
+                status = 2
+            else:
+                status = 0
             if channel is not None:
                 channel = str(channel)
                 data_mongo = list(main_trx.find({"$and": [{"USER_REF": {"$regex": "^" + channel}}, {"_isFraud": status}]}).sort("_id", -1).limit(10))
@@ -253,4 +306,123 @@ class mainTRXFraud(APIView):
             'status': 'Data Baru Berhasil Ditambahkan'
         }
         return JsonResponse(response, safe=False)
-    
+
+class trainingModel(APIView):
+    def post(self, request):
+        # Membuat cursor
+        cur_public = conn_public.cursor()# Melakukan query ke database
+        cur_collection = conn_collection.cursor()# Melakukan query ke database
+        
+        id_rules = request.query_params.get('id_rules', None)
+        id_rules = str(id_rules)
+        cur_public.execute("SELECT table_id, name, configurations FROM master_rules WHERE id = '{}'".format(id_rules))
+        result = cur_public.fetchone()
+        # Store the result into variables
+        table = result[0]
+        name = result[1]
+        rule = result[2]
+
+        cur_public.execute("SELECT name FROM master_tables WHERE id = '{}'".format(table))
+        nama_tabel = cur_public.fetchone()
+        nama_tabel = nama_tabel[0]
+        # nama_tabel = 'api_detection_test_data'
+
+        cur_collection.execute("SELECT * FROM {}".format(nama_tabel))
+        result = cur_collection.fetchall()
+        dataframe = pd.DataFrame.from_records(result, columns=[desc[0] for desc in cur_collection.description])
+
+        try:
+            dataframe['activity_date'] = pd.to_datetime(dataframe['activity_date'])
+        except KeyError:
+            dataframe['TIME_STAMP'] = pd.to_datetime(dataframe['TIME_STAMP'])
+        
+        time_obj_list = []
+        for i in range(len(rule)):
+            time_obj = datetime.strptime(rule[i]["value"], '%H:%M').time()
+            time_obj_list.append(time_obj)
+
+        field_list = []
+        for i in range(len(rule)):
+            field_list.append(rule[i]["field"])
+
+        op_map = {
+            'LESS_THAN': 'lt',
+            'GREATER_THAN': 'gt',
+            'EQUALS': 'eq',
+            'NOT_EQUALS': 'ne'
+        }
+
+        operator_list = []
+        for r in rule:
+            op_func = getattr(operator, op_map[r['operator']])
+            operator_list.append(op_func)
+
+        def labeling(row):
+            fields = [row[field] for field in field_list]
+            for i in range(len(rule)):
+                op_func = operator_list[i]
+                time_obj = time_obj_list[i]
+                if not op_func(fields[i].time(), time_obj):
+                    return 0
+            return 1
+        dataframe['_result'] = dataframe.apply(labeling, axis=1)
+
+        def label_decs(data):
+            if data == 1:
+                return "['{}']".format(name)
+            
+        dataframe['_description'] = dataframe['_result'].apply(label_decs)
+
+        def label_stat(data):
+            if data == 0:
+                return 0
+            else:
+                return 1
+        dataframe['_isFraud'] = dataframe['_result'].apply(label_stat)
+
+        data_dict = dataframe.to_dict("records")
+        nama = 'data_login'
+        collection = db['{}'.format(nama)]
+        collection.insert_many(data_dict)
+
+        unique_fields = list(set(field_list))
+        data = dataframe.loc[:, unique_fields + ['_result']]
+
+        for col in data.columns:
+            if data[col].dtype == 'datetime64[ns]':
+                data[col] = data[col].apply(lambda x: x.timestamp())
+            elif data[col].dtype == 'object':
+                data[col] = data[col].apply(lambda x: sum(ord(c) for c in x))
+
+        X = data.iloc[:, :-1]
+        y = data.iloc[:, -1]
+
+        scaler = StandardScaler()
+        scaler.fit(X)
+        X_scaled = scaler.transform(X)
+
+        date_now = timezone.now() + timezone.timedelta(hours=7)
+        date_now = date_now.strftime("%Y%m%d_%H%M%S")
+
+        new_scaler = f'scaler_{date_now}.pkl'
+        os.rename("new_scaler.pkl", new_scaler)
+        pickle.dump(scaler, open("new_scaler.pkl", "wb"))
+
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size = 0.2, random_state = 0)
+            sm = SMOTE(random_state = 2)
+            X_train, y_train = sm.fit_resample(X_train, y_train.ravel())
+        except ValueError :
+            X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size = 0.2, random_state = 0)
+
+        rfc = RandomForestClassifier(n_estimators=10).fit(X_train, y_train)
+        rfc_pred = rfc.predict(X_test)
+
+        new_model = f'model_{date_now}.pkl'
+        os.rename("new_model.pkl", new_model)
+        pickle.dump(rfc, open("new_model.pkl", "wb"))
+
+        response = {
+            'status': 'yesy'
+        }
+        return JsonResponse(response, safe=False)
