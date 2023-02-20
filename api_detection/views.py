@@ -11,7 +11,6 @@ from bson import Decimal128
 from decimal import Decimal
 from datetime import datetime
 from pymongo import MongoClient
-
 from rest_framework.views import APIView
 # from api_detection.models import transaksi, test_data, digi_login
 from django.http import JsonResponse
@@ -315,62 +314,140 @@ class trainingModel(APIView):
         
         id_rules = request.query_params.get('id_rules', None)
         id_rules = str(id_rules)
-        cur_public.execute("SELECT table_id, name, configurations FROM master_rules WHERE id = '{}'".format(id_rules))
+        cur_public.execute("SELECT table_id FROM master_rules WHERE id = '{}'".format(id_rules))
         result = cur_public.fetchone()
-        # Store the result into variables
         table = result[0]
-        name = result[1]
-        rule = result[2]
+
+        cur_public.execute("SELECT name, configurations FROM master_rules WHERE table_id = '{}'".format(table))
+        results = cur_public.fetchall()
+
+        rules = []
+        names = []
+        for result in results:
+            names.append(result[0])
+            rules.append(result[1])
 
         cur_public.execute("SELECT name FROM master_tables WHERE id = '{}'".format(table))
         nama_tabel = cur_public.fetchone()
         nama_tabel = nama_tabel[0]
-        # nama_tabel = 'api_detection_test_data'
 
-        cur_collection.execute("SELECT * FROM {}".format(nama_tabel))
-        result = cur_collection.fetchall()
-        dataframe = pd.DataFrame.from_records(result, columns=[desc[0] for desc in cur_collection.description])
+        pickle.dump(names, open("{}_rulename.pkl".format(nama_tabel), "wb"))
+
+        collection = db['{}'.format(nama_tabel)]
+        data_mongo = list(collection.find())
+
+        if len(data_mongo) > 0:
+            dataframe = pd.DataFrame(data_mongo)
+            dataframe.drop(labels=['_id', '_result', '_description', '_isFraud'], axis=1, inplace=True)
+            collection.delete_many({})
+        else:
+            cur_collection.execute("SELECT * FROM {}".format(nama_tabel))
+            result = cur_collection.fetchall()
+            dataframe = pd.DataFrame.from_records(result, columns=[desc[0] for desc in cur_collection.description])
+        
+        # dataframe = test_data.objects.all().values()
+        # dataframe = pd.DataFrame.from_records(dataframe)
 
         try:
-            dataframe['activity_date'] = pd.to_datetime(dataframe['activity_date'])
+            dataframe.drop(labels=['id'], axis=1, inplace=True)
         except KeyError:
-            dataframe['TIME_STAMP'] = pd.to_datetime(dataframe['TIME_STAMP'])
-        
-        time_obj_list = []
-        for i in range(len(rule)):
-            time_obj = datetime.strptime(rule[i]["value"], '%H:%M').time()
-            time_obj_list.append(time_obj)
+            pass
+        try:
+            dataframe.drop(labels=['_id'], axis=1, inplace=True)
+        except KeyError:
+            pass
 
-        field_list = []
-        for i in range(len(rule)):
-            field_list.append(rule[i]["field"])
+        try:
+            dataframe['activity_date'] = pd.to_datetime(dataframe['activity_date'], utc=True)
+        except KeyError:
+            dataframe['TIME_STAMP'] = pd.to_datetime(dataframe['TIME_STAMP'], utc=True)
+        
+        def not_contains(a, b):
+            return not a.__contains__(b)
 
         op_map = {
             'LESS_THAN': 'lt',
+            'LESS_EQUALS': 'le',
             'GREATER_THAN': 'gt',
+            'GREATER_EQUALS': 'ge',
             'EQUALS': 'eq',
-            'NOT_EQUALS': 'ne'
+            'NOT_EQUALS': 'ne',
+            'IN': 'contains'
         }
 
+        val_list = []
+        field_list = []
         operator_list = []
-        for r in rule:
-            op_func = getattr(operator, op_map[r['operator']])
-            operator_list.append(op_func)
+
+        for rule in rules:
+            sub_val_list = []
+            sub_field_list = []
+            sub_op_list = []
+            for r in rule:
+                field = r['field']
+                sub_field_list.append(field)
+                try:
+                    val = datetime.strptime(r["value"], '%H:%M').time()
+                except ValueError:
+                    val = r["value"]
+                sub_val_list.append(val)
+                if r['operator'] == 'NOT_IN':
+                    op_func = not_contains
+                else:
+                    op_func = getattr(operator, op_map[r['operator']])
+                sub_op_list.append(op_func)
+            field_list.append(sub_field_list)
+            val_list.append(sub_val_list)
+            operator_list.append(sub_op_list)
 
         def labeling(row):
-            fields = [row[field] for field in field_list]
-            for i in range(len(rule)):
-                op_func = operator_list[i]
-                time_obj = time_obj_list[i]
-                if not op_func(fields[i].time(), time_obj):
-                    return 0
-            return 1
+            fields = [[row[field[i]] for i in range(len(field))] for field in field_list]
+            label = 0
+            for i in range(len(rules)):
+                label_i = True
+                for j in range(len(rules[i])):
+                    op_func = operator_list[i][j]
+                    val = val_list[i][j]
+                    field = fields[i][j]
+                    try:                
+                        field = field.time()
+                    except AttributeError:
+                        pass
+                    if not op_func(field, val):
+                        label_i = False
+                        break
+                if label_i:
+                    if label != 0:
+                        if label < 10:
+                            l_old = '0' + f'{label}'
+                            l_new = '0' + f'{label+1}'
+                        else:
+                            l_old = f'{label}'
+                            l_new = f'{label+1}'
+                        lbl = '100' + l_old + l_new
+                        label = int(lbl)
+                    else:
+                        label = i+1
+            return label
         dataframe['_result'] = dataframe.apply(labeling, axis=1)
 
         def label_decs(data):
-            if data == 1:
-                return "['{}']".format(name)
-            
+            for idx, name in enumerate(names):
+                if data == 0:
+                    decs =  ""
+                elif data == idx+1:
+                    decs =  "['{}']".format(name)
+                else:
+                    str_data = f'{data}'
+                    label = str_data[3:]
+                    result = []
+                    for i in range(0, len(label), 2):
+                        for idx, name in enumerate(names):
+                            if int(label[i:i+2]) == idx+1:
+                                result.append(name)
+                    if result:
+                        decs =  "{}".format(result)
+            return decs
         dataframe['_description'] = dataframe['_result'].apply(label_decs)
 
         def label_stat(data):
@@ -381,15 +458,22 @@ class trainingModel(APIView):
         dataframe['_isFraud'] = dataframe['_result'].apply(label_stat)
 
         data_dict = dataframe.to_dict("records")
-        nama = 'data_login'
-        collection = db['{}'.format(nama)]
+        # nama = 'data_login'
+        # collection = db['{}'.format(nama_tabel)]
         collection.insert_many(data_dict)
 
-        unique_fields = list(set(field_list))
+        unique_fields = []
+        for sublist in field_list:
+            for item in sublist:
+                unique_fields.append(item)
+
+        unique_fields = list(set(unique_fields))
+        pickle.dump(unique_fields, open("{}_fields.pkl".format(nama_tabel), "wb"))
+
         data = dataframe.loc[:, unique_fields + ['_result']]
 
         for col in data.columns:
-            if data[col].dtype == 'datetime64[ns]':
+            if data[col].dtype == 'datetime64[ns, UTC]':
                 data[col] = data[col].apply(lambda x: x.timestamp())
             elif data[col].dtype == 'object':
                 data[col] = data[col].apply(lambda x: sum(ord(c) for c in x))
@@ -404,9 +488,12 @@ class trainingModel(APIView):
         date_now = timezone.now() + timezone.timedelta(hours=7)
         date_now = date_now.strftime("%Y%m%d_%H%M%S")
 
-        new_scaler = f'scaler_{date_now}.pkl'
-        os.rename("new_scaler.pkl", new_scaler)
-        pickle.dump(scaler, open("new_scaler.pkl", "wb"))
+        new_scaler = f'{nama_tabel}_scaler_{date_now}.pkl'
+        try:
+            os.rename("{}_scaler.pkl".format(nama_tabel), new_scaler)
+            pickle.dump(scaler, open("{}_scaler.pkl".format(nama_tabel), "wb"))
+        except FileNotFoundError:
+            pickle.dump(scaler, open("{}_scaler.pkl".format(nama_tabel), "wb"))
 
         try:
             X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size = 0.2, random_state = 0)
@@ -418,10 +505,12 @@ class trainingModel(APIView):
         rfc = RandomForestClassifier(n_estimators=10).fit(X_train, y_train)
         rfc_pred = rfc.predict(X_test)
 
-        new_model = f'model_{date_now}.pkl'
-        os.rename("new_model.pkl", new_model)
-        pickle.dump(rfc, open("new_model.pkl", "wb"))
-
+        new_model = f'{nama_tabel}_model_{date_now}.pkl'
+        try:
+            os.rename("{}_model.pkl".format(nama_tabel), new_model)
+            pickle.dump(rfc, open("{}_model.pkl".format(nama_tabel), "wb"))
+        except FileNotFoundError:
+            pickle.dump(rfc, open("{}_model.pkl".format(nama_tabel), "wb"))
         response = {
             'status': 'yesy'
         }

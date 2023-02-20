@@ -5,3 +5,7 @@ login_model.pkl
 login_scaler.pkl
 trx_scaler.pkl
 trx_model.pkl
+digi_login_fields.pkl
+digi_login_model.pkl
+digi_login_rulename.pkl
+digi_login_scaler.pkl
