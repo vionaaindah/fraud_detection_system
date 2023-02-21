@@ -284,6 +284,58 @@ def loginFraudDynamic(data):
     data['_isFraud'] = data['_isFraud'].astype(int)
 
 class digiloginDyamicFraud(APIView):
+    def get(self, request):
+        customer_id = request.GET.get('customer_id')
+        status = request.GET.get('status')
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
+        if customer_id is not None:
+            customer_id = str(customer_id)
+            data_mongo = list(digi_login.find({"customer_id": customer_id}).sort("_id", -1).limit(10))
+        elif start_date is not None and end_date is not None:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date, '%Y-%m-%d')
+            if status is not None:
+                status_txt = str(status)
+                if status_txt == 'SUSPECT':
+                    status = 1
+                elif status_txt == 'FRAUD':
+                    status = 2
+                else:
+                    status = 0
+                data_mongo = list(digi_login.find({"activity_date": {"$gte": start_date, "$lte": end_date}, "_isFraud": status}).sort("_id", -1).limit(10))
+            else:
+                data_mongo = list(digi_login.find({"activity_date": {"$gte": start_date, "$lte": end_date}}).sort("_id", -1).limit(10))
+        elif status is not None:
+            status_txt = str(status)
+            if status_txt == 'SUSPECT':
+                status = 1
+            elif status_txt == 'FRAUD':
+                status = 2
+            else:
+                status = 0
+            data_mongo = list(digi_login.find({"_isFraud": status}).sort("_id", -1).limit(10))
+        else:
+            data_mongo = list(digi_login.find().sort("_id", -1).limit(10000))
+
+        database = pd.DataFrame(data_mongo)
+        database.drop(labels=['_id'], axis=1, inplace=True)
+
+        try:
+            database['_description'] = database['_description'].replace('', pd.np.nan)
+            database['_description'] = database['_description'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+        except KeyError:
+            database['_description'] = pd.np.nan
+
+        database['_result'] = database['_result'].astype(int)
+        database['activity_date'] = database['activity_date'].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S'))
+        database['_isFraud'] = database['_isFraud'].astype(int)
+
+        data_result = database.to_json(orient='records')
+        response = json.loads(data_result)
+        return JsonResponse(response, safe=False)
+    
     def post(self, request):
         data_request = request.data
 
