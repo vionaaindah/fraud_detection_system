@@ -21,6 +21,7 @@ from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
+import pytz
 
 client = MongoClient('mongodb://<ip-address>:27017/')
 db = client['<nama-database>']
@@ -81,7 +82,7 @@ class trainingModel(APIView):
         result = cur_public.fetchone()
         table = result[0]
 
-        cur_public.execute("SELECT name, configurations FROM master_rules WHERE table_id = '{}'".format(table))
+        cur_public.execute("SELECT name, configurations FROM master_rules WHERE table_id = '{}' AND deleted_at IS NULL".format(table))
         results = cur_public.fetchall()
 
         rules = []
@@ -107,12 +108,22 @@ class trainingModel(APIView):
             cur_collection.execute("SELECT * FROM {}".format(nama_tabel))
             result = cur_collection.fetchall()
             dataframe = pd.DataFrame.from_records(result, columns=[desc[0] for desc in cur_collection.description])
-            dataframe.drop(labels=['id'], axis=1, inplace=True)
+            try:
+                dataframe.drop(labels=['id'], axis=1, inplace=True)
+            except:
+                pass
+
+        try:
+            data['customer_id'] = data['customer_id'].astype(str)
+        except:
+            pass
 
         try:
             dataframe['activity_date'] = pd.to_datetime(dataframe['activity_date'], utc=True)
+            # dataframe['activity_date'] = dataframe['activity_date'].dt.tz_convert(time_zone)
         except KeyError:
             dataframe['TIME_STAMP'] = pd.to_datetime(dataframe['TIME_STAMP'], utc=True)
+            # dataframe['TIME_STAMP'] = dataframe['TIME_STAMP'].dt.tz_convert(time_zone)
         
         def not_contains(a, b):
             return not a.__contains__(b)
@@ -282,7 +293,9 @@ def loginFraudDynamic(data):
             pass
 
         for col in data_pred.columns:
-            if data_pred[col].dtype == 'object':
+            if data_pred[col].dtype == 'datetime64[ns, UTC]':
+                data_pred[col] = data_pred[col].apply(lambda x: x.timestamp())
+            elif data_pred[col].dtype == 'object':
                 data_pred[col] = data_pred[col].apply(lambda x: sum(ord(c) for c in x))
 
         data_pred_scaled = scaler.transform(data_pred)
