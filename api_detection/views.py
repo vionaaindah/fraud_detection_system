@@ -45,6 +45,7 @@ conn_collection = psycopg2.connect(
     options="-c search_path=<nama_skema>"
 )
 
+
 def label_decs(data, names):
     for idx, name in enumerate(names):
         if data == 0:
@@ -115,6 +116,12 @@ class trainingModel(APIView):
         
         def not_contains(a, b):
             return not a.__contains__(b)
+        
+        def function_in(a, b):
+            return a in b
+
+        def function_not_in(a, b):
+            return a not in b
 
         op_map = {
             'LESS_THAN': 'lt',
@@ -123,7 +130,7 @@ class trainingModel(APIView):
             'GREATER_EQUALS': 'ge',
             'EQUALS': 'eq',
             'NOT_EQUALS': 'ne',
-            'IN': 'contains'
+            'CONTAINS': 'contains'
         }
 
         val_list = []
@@ -140,10 +147,17 @@ class trainingModel(APIView):
                 try:
                     val = datetime.strptime(r["value"], '%H:%M').time()
                 except ValueError:
-                    val = r["value"]
+                    try:
+                        val = ast.literal_eval(r["value"]) if isinstance(r["value"], str) else r["value"]
+                    except:
+                        val = r["value"]
                 sub_val_list.append(val)
-                if r['operator'] == 'NOT_IN':
+                if r['operator'] == 'NOT_CONTAINS':
                     op_func = not_contains
+                elif r['operator'] == 'IN':
+                    op_func = function_in
+                elif r['operator'] == 'NOT_IN':
+                    op_func = function_not_in
                 else:
                     op_func = getattr(operator, op_map[r['operator']])
                 sub_op_list.append(op_func)
