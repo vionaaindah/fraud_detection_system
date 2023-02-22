@@ -113,18 +113,6 @@ class trainingModel(APIView):
             except:
                 pass
 
-        try:
-            data['customer_id'] = data['customer_id'].astype(str)
-        except:
-            pass
-
-        try:
-            dataframe['activity_date'] = pd.to_datetime(dataframe['activity_date'], utc=True)
-            # dataframe['activity_date'] = dataframe['activity_date'].dt.tz_convert(time_zone)
-        except KeyError:
-            dataframe['TIME_STAMP'] = pd.to_datetime(dataframe['TIME_STAMP'], utc=True)
-            # dataframe['TIME_STAMP'] = dataframe['TIME_STAMP'].dt.tz_convert(time_zone)
-        
         def not_contains(a, b):
             return not a.__contains__(b)
         
@@ -155,14 +143,18 @@ class trainingModel(APIView):
             for r in rule:
                 field = r['field']
                 sub_field_list.append(field)
+
                 try:
                     val = datetime.strptime(r["value"], '%H:%M').time()
                 except ValueError:
                     try:
+                    # if '[' in r["value"]:
                         val = ast.literal_eval(r["value"]) if isinstance(r["value"], str) else r["value"]
+                    # else:
                     except:
                         val = r["value"]
                 sub_val_list.append(val)
+                
                 if r['operator'] == 'NOT_CONTAINS':
                     op_func = not_contains
                 elif r['operator'] == 'IN':
@@ -176,6 +168,24 @@ class trainingModel(APIView):
             val_list.append(sub_val_list)
             operator_list.append(sub_op_list)
 
+        unique_fields = []
+        for sublist in field_list:
+            for item in sublist:
+                unique_fields.append(item)
+
+        unique_fields = list(set([item for sublist in field_list for item in sublist]))
+        pickle.dump(unique_fields, open("{}_fields.pkl".format(nama_tabel), "wb"))
+
+        for col in unique_fields:
+            dataframe = dataframe.dropna(subset=[col])
+
+        if nama_tabel == 'digi_login':
+            # dataframe['customer_id'] = dataframe['customer_id'].astype(int)
+            dataframe['activity_date'] = pd.to_datetime(dataframe['activity_date'], utc=True)
+        elif nama_tabel == 'main_trx':
+            # dataframe['BUSS_DATE'] = pd.to_datetime(dataframe['BUSS_DATE'], utc=True)
+            dataframe['TIME_STAMP'] = pd.to_datetime(dataframe['TIME_STAMP'], format="%Y-%m-%d-%H.%M.%S.%f", utc=True)
+
         def labeling(row):
             fields = [[row[field[i]] for i in range(len(field))] for field in field_list]
             label = 0
@@ -185,6 +195,15 @@ class trainingModel(APIView):
                     op_func = operator_list[i][j]
                     val = val_list[i][j]
                     field = fields[i][j]
+                    try:
+                    # if '[' in field:
+                        field = ast.literal_eval(field) if isinstance(field, str) else field
+                    # else:
+                    except:
+                        pass
+                    # if pd.isna(field) or field == '':
+                    #     label_i = False
+                    #     break
                     try:                
                         field = field.time()
                     except AttributeError:
@@ -194,34 +213,23 @@ class trainingModel(APIView):
                         break
                 if label_i:
                     if label != 0:
-                        if label < 10:
-                            l_old = '0' + f'{label}'
-                            l_new = '0' + f'{label+1}'
+                        if label < 100:
+                            l_old = str(label).zfill(2)
+                            l_new = str(i+1).zfill(2)
+                            label = int('100' + l_old + l_new)
                         else:
-                            l_old = f'{label}'
-                            l_new = f'{label+1}'
-                        lbl = '100' + l_old + l_new
-                        label = int(lbl)
+                            l_new = str(i+1).zfill(2)
+                            label = int(str(label) + l_new)
                     else:
                         label = i+1
             return label
+        
         dataframe['_result'] = dataframe.apply(labeling, axis=1)
-
         dataframe['_description'] = dataframe['_result'].apply(label_decs, names=names)
-
         dataframe['_isFraud'] = dataframe['_result'].apply(label_stat)
 
         data_dict = dataframe.to_dict("records")
         collection.insert_many(data_dict)
-
-        unique_fields = []
-        for sublist in field_list:
-            for item in sublist:
-                unique_fields.append(item)
-
-        # unique_fields = list(set(unique_fields))
-        unique_fields = list(set([item for sublist in field_list for item in sublist]))
-        pickle.dump(unique_fields, open("{}_fields.pkl".format(nama_tabel), "wb"))
 
         data = dataframe.loc[:, unique_fields + ['_result']]
 
