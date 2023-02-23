@@ -1,6 +1,7 @@
 import os
 import ast
 import json
+import pytz
 import operator
 import pickle
 import psycopg2
@@ -21,7 +22,8 @@ from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
-import pytz
+
+time_zone = pytz.timezone('Asia/Jakarta')
 
 client = MongoClient('mongodb://<ip-address>:27017/')
 db = client['<nama-database>']
@@ -95,7 +97,7 @@ class trainingModel(APIView):
         nama_tabel = cur_public.fetchone()
         nama_tabel = nama_tabel[0]
 
-        pickle.dump(names, open("{}_rulename.pkl".format(nama_tabel), "wb"))
+        pickle.dump(names, open("machine_learning/{}_rulename.pkl".format(nama_tabel), "wb"))
 
         collection = db['{}'.format(nama_tabel)]
         data_mongo = list(collection.find())
@@ -167,23 +169,27 @@ class trainingModel(APIView):
             field_list.append(sub_field_list)
             val_list.append(sub_val_list)
             operator_list.append(sub_op_list)
-
+        
         unique_fields = []
         for sublist in field_list:
             for item in sublist:
                 unique_fields.append(item)
 
         unique_fields = list(set([item for sublist in field_list for item in sublist]))
-        pickle.dump(unique_fields, open("{}_fields.pkl".format(nama_tabel), "wb"))
+        pickle.dump(unique_fields, open("machine_learning/{}_fields.pkl".format(nama_tabel), "wb"))
 
         for col in unique_fields:
-            dataframe = dataframe.dropna(subset=[col])
+            try:
+                dataframe = dataframe.dropna(subset=[col])
+            except:
+                pass
+            if col == 'USER_REF':
+                dataframe = dataframe[~dataframe[col].str.isdigit()]
 
         if nama_tabel == 'digi_login':
-            # dataframe['customer_id'] = dataframe['customer_id'].astype(int)
             dataframe['activity_date'] = pd.to_datetime(dataframe['activity_date'], utc=True)
         elif nama_tabel == 'main_trx':
-            # dataframe['BUSS_DATE'] = pd.to_datetime(dataframe['BUSS_DATE'], utc=True)
+            dataframe['BUSS_DATE'] = pd.to_datetime(dataframe['BUSS_DATE'], utc=True)
             dataframe['TIME_STAMP'] = pd.to_datetime(dataframe['TIME_STAMP'], format="%Y-%m-%d-%H.%M.%S.%f", utc=True)
 
         def labeling(row):
@@ -195,19 +201,13 @@ class trainingModel(APIView):
                     op_func = operator_list[i][j]
                     val = val_list[i][j]
                     field = fields[i][j]
-                    try:
-                    # if '[' in field:
-                        field = ast.literal_eval(field) if isinstance(field, str) else field
-                    # else:
-                    except:
-                        pass
-                    # if pd.isna(field) or field == '':
-                    #     label_i = False
-                    #     break
                     try:                
                         field = field.time()
                     except AttributeError:
-                        pass
+                        if '[' in field or field.isdigit():
+                            field = ast.literal_eval(field) if isinstance(field, str) else field
+                        else:
+                            pass
                     if not op_func(field, val):
                         label_i = False
                         break
@@ -249,12 +249,12 @@ class trainingModel(APIView):
         date_now = timezone.now() + timezone.timedelta(hours=7)
         date_now = date_now.strftime("%Y%m%d_%H%M%S")
 
-        new_scaler = f'{nama_tabel}_scaler_{date_now}.pkl'
+        new_scaler = f'machine_learning/history/{nama_tabel}_scaler_{date_now}.pkl'
         try:
-            os.rename("{}_scaler.pkl".format(nama_tabel), new_scaler)
-            pickle.dump(scaler, open("{}_scaler.pkl".format(nama_tabel), "wb"))
+            os.rename("machine_learning/{}_scaler.pkl".format(nama_tabel), new_scaler)
+            pickle.dump(scaler, open("machine_learning/{}_scaler.pkl".format(nama_tabel), "wb"))
         except FileNotFoundError:
-            pickle.dump(scaler, open("{}_scaler.pkl".format(nama_tabel), "wb"))
+            pickle.dump(scaler, open("machine_learning/{}_scaler.pkl".format(nama_tabel), "wb"))
 
         try:
             X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size = 0.2, random_state = 0)
@@ -266,12 +266,12 @@ class trainingModel(APIView):
         rfc = RandomForestClassifier(n_estimators=10).fit(X_train, y_train)
         rfc_pred = rfc.predict(X_test)
 
-        new_model = f'{nama_tabel}_model_{date_now}.pkl'
+        new_model = f'machine_learning/history/{nama_tabel}_model_{date_now}.pkl'
         try:
-            os.rename("{}_model.pkl".format(nama_tabel), new_model)
-            pickle.dump(rfc, open("{}_model.pkl".format(nama_tabel), "wb"))
+            os.rename("machine_learning/{}_model.pkl".format(nama_tabel), new_model)
+            pickle.dump(rfc, open("machine_learning/{}_model.pkl".format(nama_tabel), "wb"))
         except FileNotFoundError:
-            pickle.dump(rfc, open("{}_model.pkl".format(nama_tabel), "wb"))
+            pickle.dump(rfc, open("machine_learning/{}_model.pkl".format(nama_tabel), "wb"))
         response = {
             'status': 'Model Baru Tersimpan'
         }
@@ -281,8 +281,8 @@ def loginFraudDynamic(data):
     model = sett.login_model
     scaler = sett.login_scaler
 
-    unique_fields = pickle.load(open("digi_login_fields.pkl", "rb"))
-    names = pickle.load(open("digi_login_rulename.pkl", "rb"))
+    unique_fields = pickle.load(open("machine_learning/digi_login_fields.pkl", "rb"))
+    names = pickle.load(open("machine_learning/digi_login_rulename.pkl", "rb"))
 
     for i, row in data.iterrows():
         data_pred = [[row[field] for field in unique_fields]]
