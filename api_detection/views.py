@@ -322,25 +322,16 @@ class digiloginDyamicFraud(APIView):
         status = request.GET.get('status')
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
+        limit = request.GET.get('limit')
+        skip = request.GET.get('skip')
+
+        filter_mongo = {}
 
         if customer_id is not None:
             customer_id = str(customer_id)
-            data_mongo = list(digi_login.find({"customer_id": customer_id}).sort("_id", -1).limit(10))
-        elif start_date is not None and end_date is not None:
-            start_date = datetime.strptime(start_date, '%Y-%m-%d')
-            end_date = datetime.strptime(end_date, '%Y-%m-%d')
-            if status is not None:
-                status_txt = str(status)
-                if status_txt == 'SUSPECT':
-                    status = 1
-                elif status_txt == 'FRAUD':
-                    status = 2
-                else:
-                    status = 0
-                data_mongo = list(digi_login.find({"activity_date": {"$gte": start_date, "$lte": end_date}, "_isFraud": status}).sort("_id", -1).limit(10))
-            else:
-                data_mongo = list(digi_login.find({"activity_date": {"$gte": start_date, "$lte": end_date}}).sort("_id", -1).limit(10))
-        elif status is not None:
+            filter_mongo["customer_id"] = customer_id
+            
+        if status is not None:
             status_txt = str(status)
             if status_txt == 'SUSPECT':
                 status = 1
@@ -348,12 +339,22 @@ class digiloginDyamicFraud(APIView):
                 status = 2
             else:
                 status = 0
-            data_mongo = list(digi_login.find({"_isFraud": status}).sort("_id", -1).limit(10))
-        else:
-            data_mongo = list(digi_login.find().sort("_id", -1).limit(10000))
+            filter_mongo["_isFraud"] = status
+
+        if start_date is not None:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d')
+            filter_mongo["activity_date"] = {"$gte": start_date}
+
+        if end_date is not None:
+            end_date = datetime.strptime(end_date, '%Y-%m-%d')
+            filter_mongo["activity_date"] = {"$lte": end_date}
+
+        limit = int(limit) if limit is not None else 10
+        skip = int(skip) if skip is not None else 0
+
+        data_mongo = list(digi_login.find(filter_mongo).limit(limit).skip(skip))
 
         database = pd.DataFrame(data_mongo)
-        database.drop(labels=['_id'], axis=1, inplace=True)
 
         try:
             database['_description'] = database['_description'].replace('', pd.np.nan)
@@ -443,37 +444,24 @@ class mainTRXDyamicFraud(APIView):
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
         channel = request.GET.get('channel')
+        limit = request.GET.get('limit')
+        skip = request.GET.get('skip')
+
+        filter_mongo = {}
+
+        if cif is not None:
+            cif = str(cif)
+            filter_mongo["CIF"] = cif
 
         if account is not None:
             account = str(account)
-            data_mongo = list(main_trx.find({"ACCOUNT": account}).sort("_id", -1).limit(10))
-        elif cif is not None:
-            cif = str(cif)
-            data_mongo = list(main_trx.find({"CIF": cif}).sort("_id", -1).limit(10))
+            filter_mongo["ACCOUNT"] = account
 
-        elif start_date is not None and end_date is not None:
-            start_date = datetime.strptime(start_date, '%Y-%m-%d')
-            end_date = datetime.strptime(end_date, '%Y-%m-%d')
-            if status is not None:
-                status_txt = str(status)
-                if status_txt == 'SUSPECT':
-                    status = 1
-                elif status_txt == 'FRAUD':
-                    status = 2
-                else:
-                    status = 0
-                if channel is not None:
-                    channel = str(channel)
-                    data_mongo = list(main_trx.find({"$and": [{"BUSS_DATE": {"$gte": start_date, "$lte": end_date}}, {"_isFraud": status}, {"USER_REF": {"$regex": "^" + channel}}]}).sort("_id", -1).limit(10))
-                else:
-                    data_mongo = list(main_trx.find({"BUSS_DATE": {"$gte": start_date, "$lte": end_date}, "_isFraud": status}).sort("_id", -1).limit(10))
-            elif channel is not None:
-                channel = str(channel)
-                data_mongo = list(main_trx.find({"BUSS_DATE": {"$gte": start_date, "$lte": end_date}, "USER_REF": {"$regex": "^" + channel}}).sort("_id", -1).limit(10))
-            else:
-                data_mongo = list(main_trx.find({"BUSS_DATE": {"$gte": start_date, "$lte": end_date}}).sort("_id", -1).limit(10))
+        if channel is not None:
+            channel = str(channel)
+            filter_mongo["USER_REF"] = {"$regex": "^" + channel}
 
-        elif status is not None:
+        if status is not None:
             status_txt = str(status)
             if status_txt == 'SUSPECT':
                 status = 1
@@ -481,21 +469,22 @@ class mainTRXDyamicFraud(APIView):
                 status = 2
             else:
                 status = 0
-            if channel is not None:
-                channel = str(channel)
-                data_mongo = list(main_trx.find({"$and": [{"USER_REF": {"$regex": "^" + channel}}, {"_isFraud": status}]}).sort("_id", -1).limit(10))
-            else:
-                data_mongo = list(main_trx.find({"_isFraud": status}).sort("_id", -1).limit(10))
+            filter_mongo["_isFraud"] = status
 
-        elif channel is not None:
-            channel = str(channel)
-            data_mongo = list(main_trx.find({"USER_REF": {"$regex": "^" + channel}}).sort("_id", -1).limit(10))
+        if start_date is not None:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d')
+            filter_mongo["BUSS_DATE"] = {"$gte": start_date}
 
-        else:
-            data_mongo = list(main_trx.find().sort("_id", -1).limit(10000))
+        if end_date is not None:
+            end_date = datetime.strptime(end_date, '%Y-%m-%d')
+            filter_mongo["BUSS_DATE"] = {"$lte": end_date}
+
+        limit = int(limit) if limit is not None else 10
+        skip = int(skip) if skip is not None else 0
+
+        data_mongo = list(main_trx.find(filter_mongo).limit(limit).skip(skip))
 
         database = pd.DataFrame(data_mongo)
-        database.drop(labels=['_id'], axis=1, inplace=True)
 
         try:
             database['_description'] = database['_description'].replace('', pd.np.nan)
