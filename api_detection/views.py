@@ -56,6 +56,8 @@ def label_decs(data, names):
     for idx, name in enumerate(names):
         if data == 0:
             decs =  ""
+        elif data == 99:
+            decs =  "Coordinat Fraud"
         elif data == idx+1:
             decs =  "['{}']".format(name)
         else:
@@ -63,9 +65,12 @@ def label_decs(data, names):
             label = str_data[3:]
             result = []
             for i in range(0, len(label), 2):
-                for idx, name in enumerate(names):
-                    if int(label[i:i+2]) == idx+1:
-                        result.append(name)
+                if int(label[i:i+2]) == 99:
+                    result.append("Coordinat Fraud")
+                else:
+                    for idx, name in enumerate(names):
+                        if int(label[i:i+2]) == idx+1:
+                            result.append(name)
             if result:
                 decs =  "{}".format(result)
     return decs
@@ -75,7 +80,17 @@ def label_stat(data):
         return 0
     else:
         return 1
-            
+
+def change_data_type(data):
+    for col in data.columns:
+        if data[col].dtype == 'datetime64[ns, UTC]':
+            data[col] = data[col].apply(lambda x: x.timestamp())
+        elif data[col].dtype == 'object':
+            if all(is_number(x) for x in data[col]):
+                data[col] = data[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+            else:
+                data[col] = data[col].apply(lambda x: sum(ord(c) for c in x))
+
 class trainingModel(APIView):
     def post(self, request):
         cur_public = conn_public.cursor()
@@ -178,6 +193,12 @@ class trainingModel(APIView):
             for item in sublist:
                 unique_fields.append(item)
 
+        if nama_tabel == 'digi_login':
+            coordinat_data = ['customer_id', 'activity_date', 'device_name', 'device_type', 'device_os', 'latitude', 'longitude']
+            unique_fields.extend(coordinat_data)
+        else:
+            pass
+
         unique_fields = list(set([item for sublist in field_list for item in sublist]))
         pickle.dump(unique_fields, open("machine_learning/{}_fields.pkl".format(nama_tabel), "wb"))
 
@@ -185,6 +206,10 @@ class trainingModel(APIView):
             if col == 'USER_REF' or col == 'NARRATIVE1':
                 dataframe[col] = dataframe[col].fillna(' ')
                 dataframe = dataframe[~dataframe[col].str.isdigit()]
+            elif col == 'latitude' or col == 'longitude':
+                    dataframe[col] = dataframe[col].astype(float)
+                    dataframe = dataframe.drop(dataframe[dataframe.col == 0].index)
+                    dataframe[col] = dataframe[col].astype(str)    
             else:
                 dataframe = dataframe.dropna(subset=[col])
 
@@ -229,6 +254,29 @@ class trainingModel(APIView):
             return label
         
         dataframe['_result'] = dataframe.apply(labeling, axis=1)
+
+        if nama_tabel == 'digi_login':
+            model = sett.coordinat_model
+            scaler = sett.coordinat_scaler
+
+            data_pred = dataframe[coordinat_data]
+
+            change_data_type(data_pred)
+
+            data_pred_scaled = scaler.transform(data_pred)
+            coor_fraud = model.predict(data_pred_scaled)
+
+            mask = (coor_fraud == 1) | (coor_fraud == 3)
+            for i, row in dataframe.loc[mask].iterrows():
+                if row['_result'] == 0:
+                    dataframe.at[i, '_result'] = 99
+                else:
+                    if row['_result'] < 100:
+                        l_old = str(row['_result']).zfill(2)
+                        dataframe.at[i, '_result'] = int('100' + l_old + '99')
+                    else:
+                        dataframe.at[i, '_result'] = int(str(row['_result']) + '99')
+
         dataframe['_description'] = dataframe['_result'].apply(label_decs, names=names)
         dataframe['_isFraud'] = dataframe['_result'].apply(label_stat)
 
@@ -237,14 +285,7 @@ class trainingModel(APIView):
 
         data = dataframe.loc[:, unique_fields + ['_result']]
 
-        for col in data.columns:
-            if data[col].dtype == 'datetime64[ns, UTC]':
-                data[col] = data[col].apply(lambda x: x.timestamp())
-            elif data[col].dtype == 'object':
-                if all(is_number(x) for x in data[col]):
-                    data[col] = data[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
-                else:
-                    data[col] = data[col].apply(lambda x: sum(ord(c) for c in x))
+        change_data_type(data)
 
         X = data.iloc[:, :-1]
         y = data.iloc[:, -1]
@@ -295,14 +336,7 @@ def loginFraudDynamic(data):
         data_pred = [[row[field] for field in unique_fields]]
         data_pred = pd.DataFrame(data_pred, columns = unique_fields)
 
-        for col in data_pred.columns:
-            if data_pred[col].dtype == 'datetime64[ns, UTC]':
-                data_pred[col] = data_pred[col].apply(lambda x: x.timestamp())
-            elif data_pred[col].dtype == 'object':
-                if all(is_number(x) for x in data[col]):
-                    data_pred[col] = data_pred[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
-                else:
-                    data_pred[col] = data_pred[col].apply(lambda x: sum(ord(c) for c in x))
+        change_data_type(data_pred)
                     
         data_pred_scaled = scaler.transform(data_pred)
         result = model.predict(data_pred_scaled)
@@ -411,18 +445,7 @@ def mainTRXFraudDynamic(data):
         data_pred = [[row[field] for field in unique_fields]]
         data_pred = pd.DataFrame(data_pred, columns = unique_fields)
 
-        print(data_pred['AMOUNT'])
-        print(type(data_pred['AMOUNT'][0]))
-
-        for col in data_pred.columns:
-            if data_pred[col].dtype == 'datetime64[ns, UTC]':
-                data_pred[col] = data_pred[col].apply(lambda x: x.timestamp())
-            elif data_pred[col].dtype == 'object':
-                if all(is_number(x) for x in data_pred[col]):
-                    data_pred[col] = data_pred[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
-                else:
-                    data_pred[col] = data_pred[col].apply(lambda x: sum(ord(c) for c in x))
-
+        change_data_type(data_pred)
 
         data_pred_scaled = scaler.transform(data_pred)
         result = model.predict(data_pred_scaled)
