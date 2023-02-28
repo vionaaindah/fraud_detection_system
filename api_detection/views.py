@@ -7,6 +7,7 @@ import operator
 import pickle
 import psycopg2
 import pandas as pd
+import subprocess
 import fraud_detection_system.settings as sett
 
 from bson import Decimal128
@@ -75,9 +76,11 @@ def label_decs(data, names):
                 decs =  "{}".format(result)
     return decs
 
-def label_stat(data):
+def label_stat(data, decs):
     if data == 0:
         return 0
+    elif 'Account is on Fraud List' in decs:
+        return 2
     else:
         return 1
 
@@ -165,13 +168,16 @@ class trainingModel(APIView):
                 sub_field_list.append(field)
                 
                 val = r["value"]
-                try:
-                    val = datetime.strptime(val, '%H:%M').time()
-                except ValueError:
-                    if '[' in val or is_number(val):
-                        val = ast.literal_eval(val) if isinstance(val, str) else val
-                    else:
-                        pass
+                if isinstance(field, dict):
+                    pass
+                else:
+                    try:
+                        val = datetime.strptime(val, '%H:%M').time()
+                    except ValueError:
+                        if '[' in val or is_number(val):
+                            val = ast.literal_eval(val) if isinstance(val, str) else val
+                        else:
+                            pass
                 sub_val_list.append(val)
                 
                 if r['operator'] == 'NOT_CONTAINS':
@@ -180,6 +186,8 @@ class trainingModel(APIView):
                     op_func = function_in
                 elif r['operator'] == 'NOT_IN':
                     op_func = function_not_in
+                elif r['operator'] == 'FREQUENCY':
+                    op_func = 'FREQUENCY'
                 else:
                     op_func = getattr(operator, op_map[r['operator']])
                 sub_op_list.append(op_func)
@@ -191,7 +199,13 @@ class trainingModel(APIView):
         unique_fields = []
         for sublist in field_list:
             for item in sublist:
-                unique_fields.append(item)
+                if isinstance(item, dict):
+                    if 'DATE' in item:
+                        unique_fields.append(item['DATE'])
+                    if 'IDENTITY' in item:
+                        unique_fields.append(item['IDENTITY'])
+                else:
+                    unique_fields.append(item)
 
         if nama_tabel == 'digi_login':
             coordinat_data = ['customer_id', 'activity_date', 'device_name', 'device_type', 'device_os', 'latitude', 'longitude']
@@ -199,7 +213,7 @@ class trainingModel(APIView):
         else:
             pass
 
-        unique_fields = list(set([item for sublist in field_list for item in sublist]))
+        unique_fields = list(set(unique_fields))
         pickle.dump(unique_fields, open("machine_learning/{}_fields.pkl".format(nama_tabel), "wb"))
 
         for col in unique_fields:
@@ -208,7 +222,7 @@ class trainingModel(APIView):
                 dataframe = dataframe[~dataframe[col].str.isdigit()]
             elif col == 'latitude' or col == 'longitude':
                     dataframe[col] = dataframe[col].astype(float)
-                    dataframe = dataframe.drop(dataframe[dataframe.col == 0].index)
+                    dataframe = dataframe.drop(dataframe[dataframe[col] == 0].index)
                     dataframe[col] = dataframe[col].astype(str)    
             else:
                 dataframe = dataframe.dropna(subset=[col])
@@ -220,7 +234,7 @@ class trainingModel(APIView):
             dataframe['TIME_STAMP'] = pd.to_datetime(dataframe['TIME_STAMP'], format="%Y-%m-%d-%H.%M.%S.%f", utc=True)
 
         def labeling(row):
-            fields = [[row[field[i]] for i in range(len(field))] for field in field_list]
+            fields = [[row[field[i]] if 'DATE' not in field[i] else field[i] for i in range(len(field))] for field in field_list]
             label = 0
             for i in range(len(rules)):
                 label_i = True
@@ -228,15 +242,30 @@ class trainingModel(APIView):
                     op_func = operator_list[i][j]
                     val = val_list[i][j]
                     field = fields[i][j]
-
-                    try:                
+                    if isinstance(field, dict):
+                        pass
+                    elif isinstance(field, pd.Timestamp):
                         field = field.time()
-                    except AttributeError:
+                    elif isinstance(field, str):
                         if '[' in field or is_number(field):
-                            field = ast.literal_eval(field) if isinstance(field, str) else field
-                        else:
-                            pass
-                    if not op_func(field, val):
+                            field = ast.literal_eval(field)
+                    else:
+                        pass
+                    if op_func == 'FREQUENCY':
+                        interval = pd.Timedelta(days=1)
+                        if val['INTERVAL']['UNIT'] == 'DAYS':
+                            interval = pd.Timedelta(days=int(val['INTERVAL']['VALUE']))
+                        elif val['INTERVAL']['UNIT'] == 'HOURS':
+                            interval = pd.Timedelta(hours=int(val['INTERVAL']['VALUE']))
+                        elif val['INTERVAL']['UNIT'] == 'MINUTES':
+                            interval = pd.Timedelta(minutes=int(val['INTERVAL']['VALUE']))
+                        elif val['INTERVAL']['UNIT'] == 'SECONDS':
+                            interval = pd.Timedelta(seconds=int(val['INTERVAL']['VALUE']))
+                        sub_df = dataframe[(dataframe[field['IDENTITY']] == row[field['IDENTITY']]) & (dataframe[field['DATE']] >= (row[field['DATE']] - interval)) & (dataframe[field['DATE']] <= row[field['DATE']])]
+                        if len(sub_df) <= int(val['FREQUENCY']):
+                            label_i = False
+                            break
+                    elif not op_func(field, val):
                         label_i = False
                         break
 
@@ -278,7 +307,7 @@ class trainingModel(APIView):
                         dataframe.at[i, '_result'] = int(str(row['_result']) + '99')
 
         dataframe['_description'] = dataframe['_result'].apply(label_decs, names=names)
-        dataframe['_isFraud'] = dataframe['_result'].apply(label_stat)
+        dataframe['_isFraud'] = dataframe.apply(lambda x: label_stat(x['_result'], x['_description']), axis=1)
 
         data_dict = dataframe.to_dict("records")
         collection.insert_many(data_dict)
@@ -344,7 +373,7 @@ def loginFraudDynamic(data):
         data.at[i,'_result'] = result
 
     data['_description'] = data['_result'].apply(label_decs, names=names)
-    data['_isFraud'] = data['_result'].apply(label_stat)
+    data['_isFraud'] = data.apply(lambda x: label_stat(x['_result'], x['_description']), axis=1)
 
     data['_description'] = data['_description'].replace('nan', pd.np.nan)
     data['_result'] = data['_result'].astype(int)
@@ -453,7 +482,7 @@ def mainTRXFraudDynamic(data):
         data.at[i,'_result'] = result
 
     data['_description'] = data['_result'].apply(label_decs, names=names)
-    data['_isFraud'] = data['_result'].apply(label_stat)
+    data['_isFraud'] = data.apply(lambda x: label_stat(x['_result'], x['_description']), axis=1)
 
     data['_description'] = data['_description'].replace('nan', pd.np.nan)
     data['_result'] = data['_result'].astype(int)
