@@ -355,11 +355,15 @@ class trainingModel(APIView):
         return JsonResponse(response, safe=False)
 
 def loginFraudDynamic(data):
-    model = sett.digi_login_model
-    scaler = sett.digi_login_scaler
+    with open("machine_learning/digi_login_model.pkl", "rb") as f:
+        model = pickle.load(f)
+    with open("machine_learning/digi_login_scaler.pkl", "rb") as f:
+        scaler = pickle.load(f)
 
-    unique_fields = pickle.load(open("machine_learning/digi_login_fields.pkl", "rb"))
-    names = pickle.load(open("machine_learning/digi_login_rulename.pkl", "rb"))
+    with open("machine_learning/digi_login_fields.pkl", "rb") as f:
+        unique_fields = pickle.load(f)
+    with open("machine_learning/digi_login_rulename.pkl", "rb") as f:
+        names = pickle.load(f)
 
     for i, row in data.iterrows():
         data_pred = [[row[field] for field in unique_fields]]
@@ -464,11 +468,15 @@ class digiloginDyamicFraud(APIView):
         return JsonResponse(response, safe=False)
     
 def mainTRXFraudDynamic(data):
-    model = sett.main_trx_model
-    scaler = sett.main_trx_scaler
+    with open("machine_learning/main_trx_model.pkl", "rb") as f:
+        model = pickle.load(f)
+    with open("machine_learning/main_trx_scaler.pkl", "rb") as f:
+        scaler = pickle.load(f)
 
-    unique_fields = pickle.load(open("machine_learning/main_trx_fields.pkl", "rb"))
-    names = pickle.load(open("machine_learning/main_trx_rulename.pkl", "rb"))
+    with open("machine_learning/main_trx_fields.pkl", "rb") as f:
+        unique_fields = pickle.load(f)
+    with open("machine_learning/main_trx_rulename.pkl", "rb") as f:
+        names = pickle.load(f)
 
     for i, row in data.iterrows():
         data_pred = [[row[field] for field in unique_fields]]
