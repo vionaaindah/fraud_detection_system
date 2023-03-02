@@ -56,11 +56,11 @@ def is_number(num):
 def label_decs(data, names):
     for idx, name in enumerate(names):
         if data == 0:
-            decs =  ""
+            decs =  []
         elif data == 99:
-            decs =  "Coordinat Fraud"
+            decs =  ["Coordinat Fraud"]
         elif data == idx+1:
-            decs =  "['{}']".format(name)
+            decs =  [name]
         else:
             str_data = f'{data}'
             label = str_data[3:]
@@ -73,7 +73,7 @@ def label_decs(data, names):
                         if int(label[i:i+2]) == idx+1:
                             result.append(name)
             if result:
-                decs =  "{}".format(result)
+                decs =  result
     return decs
 
 def label_stat(data, decs):
@@ -136,25 +136,6 @@ class trainingModel(APIView):
             except:
                 pass
 
-        def not_contains(a, b):
-            return not a.__contains__(b)
-        
-        def function_in(a, b):
-            return a in b
-
-        def function_not_in(a, b):
-            return a not in b
-
-        op_map = {
-            'LESS_THAN': 'lt',
-            'LESS_EQUALS': 'le',
-            'GREATER_THAN': 'gt',
-            'GREATER_EQUALS': 'ge',
-            'EQUALS': 'eq',
-            'NOT_EQUALS': 'ne',
-            'CONTAINS': 'contains'
-        }
-
         val_list = []
         field_list = []
         operator_list = []
@@ -179,18 +160,9 @@ class trainingModel(APIView):
                         else:
                             pass
                 sub_val_list.append(val)
-                
-                if r['operator'] == 'NOT_CONTAINS':
-                    op_func = not_contains
-                elif r['operator'] == 'IN':
-                    op_func = function_in
-                elif r['operator'] == 'NOT_IN':
-                    op_func = function_not_in
-                elif r['operator'] == 'FREQUENCY':
-                    op_func = 'FREQUENCY'
-                else:
-                    op_func = getattr(operator, op_map[r['operator']])
-                sub_op_list.append(op_func)
+                        
+                operator = r['operator']
+                sub_op_list.append(operator)
 
             field_list.append(sub_field_list)
             val_list.append(sub_val_list)
@@ -232,54 +204,98 @@ class trainingModel(APIView):
         elif nama_tabel == 'main_trx':
             dataframe['BUSS_DATE'] = pd.to_datetime(dataframe['BUSS_DATE'], utc=True)
             dataframe['TIME_STAMP'] = pd.to_datetime(dataframe['TIME_STAMP'], format="%Y-%m-%d-%H.%M.%S.%f", utc=True)
+        
+        ops = {
+            'CONTAINS': lambda x, y: str(x).find(str(y)) >= 0 if isinstance(x, str) else x.str.contains(y),
+            'IN': lambda x, y: x in y,
+            'NOT IN': lambda x, y: x not in y,
+            'GREATER_THAN': lambda x, y: x > y,
+            'GREATER_EQUALS': lambda x, y: x >= y,
+            'LESS_THAN': lambda x, y: x < y,
+            'LESS_EQUALS': lambda x, y: x <= y,
+            'EQUALS': lambda x, y: x == y,
+            'NOT_EQUALS': lambda x, y: x != y
+        }
 
+        def convert_field(field):
+            if isinstance(field, dict):
+                pass
+            elif isinstance(field, pd.Timestamp):
+                field = field.time()
+            elif isinstance(field, str):
+                if '[' in field or is_number(field):
+                    field = ast.literal_eval(field)
+            else:
+                pass
+            return field
+        
         def labeling(row):
             fields = [[row[field[i]] if 'DATE' not in field[i] else field[i] for i in range(len(field))] for field in field_list]
             label = 0
             for i in range(len(rules)):
                 label_i = True
-                for j in range(len(rules[i])):
-                    op_func = operator_list[i][j]
-                    val = val_list[i][j]
-                    field = fields[i][j]
-                    if isinstance(field, dict):
-                        pass
-                    elif isinstance(field, pd.Timestamp):
-                        field = field.time()
-                    elif isinstance(field, str):
-                        if '[' in field or is_number(field):
-                            field = ast.literal_eval(field)
-                    else:
-                        pass
-                    if op_func == 'FREQUENCY':
-                        interval = pd.Timedelta(days=1)
-                        if val['INTERVAL']['UNIT'] == 'DAYS':
-                            interval = pd.Timedelta(days=int(val['INTERVAL']['VALUE']))
-                        elif val['INTERVAL']['UNIT'] == 'HOURS':
-                            interval = pd.Timedelta(hours=int(val['INTERVAL']['VALUE']))
-                        elif val['INTERVAL']['UNIT'] == 'MINUTES':
-                            interval = pd.Timedelta(minutes=int(val['INTERVAL']['VALUE']))
-                        elif val['INTERVAL']['UNIT'] == 'SECONDS':
-                            interval = pd.Timedelta(seconds=int(val['INTERVAL']['VALUE']))
-                        sub_df = dataframe[(dataframe[field['IDENTITY']] == row[field['IDENTITY']]) & (dataframe[field['DATE']] >= (row[field['DATE']] - interval)) & (dataframe[field['DATE']] <= row[field['DATE']])]
-                        if len(sub_df) <= int(val['FREQUENCY']):
+                if all('operator' not in item or item['operator'] != 'FREQUENCY' for item in rules[i]):
+                    for j in range(len(rules[i])):
+                        op_func = operator_list[i][j]
+                        val = val_list[i][j]
+                        field = convert_field(fields[i][j])
+                        if not ops[op_func](field, val):
                             label_i = False
                             break
-                    elif not op_func(field, val):
+                    if label_i:
+                        if label != 0:
+                            if label < 100:
+                                l_old = str(label).zfill(2)
+                                l_new = str(i+1).zfill(2)
+                                label = int('100' + l_old + l_new)
+                            else:
+                                l_new = str(i+1).zfill(2)
+                                label = int(str(label) + l_new)
+                        else:
+                            label = i+1
+                if any('operator' in item and item['operator'] == 'FREQUENCY' for item in rules[i]):
+                    val_freq = 0
+                    sub_df = dataframe.copy(deep=True)
+                    interval = pd.Timedelta(days=1)
+                    for j in range(len(rules[i])):
+                        op_func = operator_list[i][j]
+                        val = val_list[i][j]
+                        field = convert_field(fields[i][j])
+                        field_row =  convert_field(field_list[i][j])
+
+                        if op_func == 'FREQUENCY':
+                            if val['INTERVAL']['UNIT'] == 'DAYS':
+                                interval = pd.Timedelta(days=int(val['INTERVAL']['VALUE']))
+                            elif val['INTERVAL']['UNIT'] == 'HOURS':
+                                interval = pd.Timedelta(hours=int(val['INTERVAL']['VALUE']))
+                            elif val['INTERVAL']['UNIT'] == 'MINUTES':
+                                interval = pd.Timedelta(minutes=int(val['INTERVAL']['VALUE']))
+                            elif val['INTERVAL']['UNIT'] == 'SECONDS':
+                                interval = pd.Timedelta(seconds=int(val['INTERVAL']['VALUE']))
+                            sub_df = sub_df.loc[(sub_df[field['IDENTITY']] == row[field['IDENTITY']]) & (sub_df[field['DATE']] >= (row[field['DATE']] - interval)) & (sub_df[field['DATE']] <= row[field['DATE']])]
+                            val_freq = int(val['FREQUENCY'])
+                            
+                        else:
+                            if not ops[op_func](field, val):
+                                sub_df = pd.DataFrame()
+
+                            else:
+                                sub_df = sub_df.loc[ops[op_func](sub_df[field_row], val)]
+                    
+                    if len(sub_df) <= val_freq:
                         label_i = False
                         break
-
-                if label_i:
-                    if label != 0:
-                        if label < 100:
-                            l_old = str(label).zfill(2)
-                            l_new = str(i+1).zfill(2)
-                            label = int('100' + l_old + l_new)
-                        else:
-                            l_new = str(i+1).zfill(2)
-                            label = int(str(label) + l_new)
                     else:
-                        label = i+1
+                        if label != 0:
+                            if label < 100:
+                                l_old = str(label).zfill(2)
+                                l_new = str(i+1).zfill(2)
+                                label = int('100' + l_old + l_new)
+                            else:
+                                l_new = str(i+1).zfill(2)
+                                label = int(str(label) + l_new)
+                        else:
+                            label = i+1
             return label
         
         dataframe['_result'] = dataframe.apply(labeling, axis=1)
