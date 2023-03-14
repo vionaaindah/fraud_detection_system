@@ -130,5 +130,5 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 import pickle
-coordinat_model = pickle.load(open("machine_learning/login_model.pkl", "rb"))
-coordinat_scaler= pickle.load(open("machine_learning/login_scaler.pkl", "rb"))
+coordinat_model = pickle.load(open("machine_learning/coordinat_model.pkl", "rb"))
+coordinat_scaler= pickle.load(open("machine_learning/coordinat_scaler.pkl", "rb"))

@@ -6,7 +6,6 @@
 machine_learning/trx_scaler.pkl
 machine_learning/trx_model.pkl
 machine_learning/main_trx_scaler.pkl
-machine_learning/coordinat_model.pkl
 machine_learning/digi_login_fields.pkl
 machine_learning/digi_login_model.pkl
 machine_learning/digi_login_rulename.pkl
@@ -14,4 +13,3 @@ machine_learning/digi_login_scaler.pkl
 machine_learning/main_trx_fields.pkl
 machine_learning/main_trx_model.pkl
 machine_learning/main_trx_rulename.pkl
-machine_learning/coordinat_scaler.pkl

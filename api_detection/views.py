@@ -180,7 +180,7 @@ class trainingModel(APIView):
                     unique_fields.append(item)
 
         if nama_tabel == 'digi_login':
-            coordinat_data = ['customer_id', 'activity_date', 'device_name', 'device_type', 'device_os', 'latitude', 'longitude']
+            coordinat_data = ['customer_id', 'activity_date', 'latitude', 'longitude']
             unique_fields.extend(coordinat_data)
         else:
             pass
@@ -311,8 +311,8 @@ class trainingModel(APIView):
             data_pred_scaled = scaler.transform(data_pred)
             coor_fraud = model.predict(data_pred_scaled)
 
-            mask = (coor_fraud == 1) | (coor_fraud == 3)
-            for i, row in dataframe.loc[mask].iterrows():
+            # mask = (coor_fraud == 1) | (coor_fraud == 3)
+            for i, row in dataframe.loc[coor_fraud == 1].iterrows():
                 if row['_result'] == 0:
                     dataframe.at[i, '_result'] = 99
                 else:
